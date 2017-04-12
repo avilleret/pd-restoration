@@ -9,6 +9,8 @@
 
 static t_class *declicker_tilde_class;
 
+#define WINDOW_SIZE 8192
+
 typedef struct _declicker_tilde {
   t_object  x_obj;
   t_sample f;
@@ -17,31 +19,15 @@ typedef struct _declicker_tilde {
 
   int x_clickWidth;
   int x_threshold;
+  int x_windowSize;
 
   t_sample* x_ms_seq;
   t_sample* x_b2;
-  int x_length;
+  t_sample* x_datawindow;
 
 } t_declicker_tilde;
 
-t_int *declicker_tilde_perform(t_int *w)
-{
-  /* the first element is a pointer to the dataspace of this object */
-  t_declicker_tilde *x = (t_declicker_tilde *)(w[1]);
-  /* here is a pointer to the t_sample arrays that hold the input signal */
-  t_sample  *in =    (t_sample *)(w[2]);
-  /* here comes the signalblock that will hold the output signal */
-  t_sample  *out =    (t_sample *)(w[3]);
-  /* all signalblocks are of the same length */
-  int          len =           (int)(w[4]);
-  if (len != x->x_length){
-    if (x->x_ms_seq) free(x->x_ms_seq);
-    if (x->x_b2) free(x->x_b2);
-    x->x_ms_seq = malloc(len * sizeof(t_sample));
-    x->x_b2 = malloc(len * sizeof(t_sample));
-    x->x_length = len;
-  }
-
+void declicker_tilde_remove_click(t_declicker_tilde* x, int len, t_sample* buffer){
   int i;
   int j;
   int left = 0;
@@ -52,7 +38,7 @@ t_int *declicker_tilde_perform(t_int *w)
   int s2 = sep/2;
 
   for( i=0; i<len; i++)
-    x->x_b2[i] = in[i]*in[i];
+    x->x_b2[i] = buffer[i]*buffer[i];
 
   /* Shortcut for rms - multiple passes through b2, accumulating
     * as we go.
@@ -91,11 +77,11 @@ t_int *declicker_tilde_perform(t_int *w)
         }
       } else {
         if(left != 0 && i-left+s2 <= ww*2) {
-          float lv = in[left];
-          float rv = in[i+ww+s2];
+          float lv = buffer[left];
+          float rv = buffer[i+ww+s2];
           for(j=left; j<i+ww+s2; j++) {
-            in[j]= (rv*(j-left) + lv*(i+ww+s2-j))/(float)(i+ww+s2-left);
-            x->x_b2[j] = in[j]*in[j];
+            buffer[j]= (rv*(j-left) + lv*(i+ww+s2-j))/(float)(i+ww+s2-left);
+            x->x_b2[j] = buffer[j]*buffer[j];
           }
           left=0;
         } else if(left != 0) {
@@ -104,6 +90,55 @@ t_int *declicker_tilde_perform(t_int *w)
       }
     }
   }
+}
+
+t_int *declicker_tilde_perform(t_int *w)
+{
+  /* the first element is a pointer to the dataspace of this object */
+  t_declicker_tilde *x = (t_declicker_tilde *)(w[1]);
+  /* here is a pointer to the t_sample arrays that hold the input signal */
+  t_sample  *in =    (t_sample *)(w[2]);
+  /* here comes the signalblock that will hold the output signal */
+  t_sample  *out =    (t_sample *)(w[3]);
+  /* all signalblocks are of the same length */
+  int        blocksize =           (int)(w[4]);
+
+   if (blocksize <= x->x_windowSize/2)
+   {
+      pd_error(x, "block size should be > 8192");
+      return (w+5);
+   }
+
+  int idealBlockLen = blocksize;
+
+   unsigned long s = 0;
+
+   while ((s < blocksize)  &&  ((blocksize - s) > x->x_windowSize/2))
+   {
+      unsigned long block = idealBlockLen;
+      if (s + block > blocksize)
+         block = blocksize - s;
+
+      for (int i=0; i < (block-x->x_windowSize/2); i += x->x_windowSize/2)
+      {
+         int wcopy = x->x_windowSize;
+         if (i + wcopy > block)
+            wcopy = block - i;
+
+         int j;
+         for(j=0; j<wcopy; j++)
+            x->x_datawindow[j] = in[i+j];
+         for(j=wcopy; j<x->x_windowSize; j++)
+            x->x_datawindow[j] = 0;
+
+         declicker_tilde_remove_click(x, x->x_windowSize, x->x_datawindow);
+
+         for(j=0; j<wcopy; j++)
+           out[i+j] = x->x_datawindow[j];
+      }
+
+      s += block;
+   }
 
   /* return a pointer to the dataspace for the next dsp-object */
   return (w+5);
@@ -139,6 +174,9 @@ void declicker_tilde_width(t_declicker_tilde* x, t_float f){
 void declicker_tilde_free(t_declicker_tilde *x)
 {
   outlet_free(x->x_out);
+  if (x->x_ms_seq) free(x->x_ms_seq);
+  if (x->x_b2) free(x->x_b2);
+  if (x->x_datawindow) free(x->x_datawindow);
 }
 
 void *declicker_tilde_new()
@@ -150,9 +188,11 @@ void *declicker_tilde_new()
 
   x->x_threshold = 200;
   x->x_clickWidth = 20;
+  x->x_windowSize = WINDOW_SIZE;
 
-  x->x_ms_seq = NULL;
-  x->x_b2 = NULL;
+  x->x_ms_seq = malloc(x->x_windowSize * sizeof(t_sample));
+  x->x_b2 = malloc(x->x_windowSize * sizeof(t_sample));
+  x->x_datawindow = malloc(x->x_windowSize * sizeof(t_sample));
 
   return (void *)x;
 }
