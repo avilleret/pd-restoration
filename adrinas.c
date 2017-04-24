@@ -72,6 +72,19 @@ static int * zeros_ivect(int N)
 }
 
 /*----------------------------------------------------------------------------*/
+/* Allocate a float array of size N initialized to zero values */
+static float * zeros_fvect(int N)
+{
+  float * x = xmalloc( N * sizeof(float) );
+  int i = 0;
+
+  #pragma omp parallel for private(i)
+  for(i=0; i<N; i++) x[i] = 0.0;
+
+  return x;
+}
+
+/*----------------------------------------------------------------------------*/
 /* Allocate a double array of size N initialized to zero values */
 static double * zeros_dvect(int N)
 {
@@ -198,6 +211,48 @@ static double ar_parameters(double * x, int p, int N, double * a)
   return sqrt(sigma2);
 }
 
+static double ar_parameters_float(float * x, int p, int N, double * a)
+{
+  double * R = zeros_dvect(p+1);
+  double * a_old = zeros_dvect(p);
+  double sigma2,k;
+  int i,j;
+
+  /* estimation of the autocorrelation function */
+  #pragma omp parallel for private(i,j) shared(R)
+  for(i=0; i<=p; i++)
+    {
+      double v = 0.0;
+      for(j=i; j<N; j++) v += x[j] * x[j-i];
+      R[i] = v / N;
+    }
+
+  /* Levinson-Durbin algorithm */
+  a[0] = a_old[0] = - R[1] / R[0];
+  sigma2 = (1 - a[0]*a[0]) * R[0];
+  for(j=1; j<p; j++)
+    {
+      /* calculation of the reflection coeff */
+      k = 0.0;
+      for(i=0; i<j; i++) k += a_old[i] * R[j-i];
+      k = (R[j+1] + k) / sigma2;
+
+      /* update */
+      a[j] = -k;
+      sigma2 = (1 - a[j]*a[j]) * sigma2;
+      for(i=j-1; i>=0; i--) a[i] = a_old[i] + a[j]*a_old[j-i-1];
+      for(i=0; i<=j; i++) a_old[i] = a[i];
+    }
+  a[0] = 1.0;
+  for(i=0; i<p; i++) a[i+1] = a_old[i];
+
+  /* free memory */
+  free(a_old);
+  free(R);
+
+  return sqrt(sigma2);
+}
+
 /*----------------------------------------------------------------------------*/
 /* Solve the matrix equation Ax=b through Cholesky decomposition.
 
@@ -206,6 +261,62 @@ static double ar_parameters(double * x, int p, int N, double * a)
    x is the solution N vector (it must be allocated)
  */
 static void solve_cholesky(double ** A, double * x, double * b, int N)
+{
+  double ** L = zeros_dmat(N,N);
+  double *  d = zeros_dvect(N);
+  double *  y = zeros_dvect(N);
+  double v;
+  int i,j,k;
+
+  /* A = LDL' decomposition
+         https://en.wikipedia.org/wiki/Cholesky_decomposition
+     L is a lower triangular matrix
+     D is a diagonal matrix
+   */
+  for(j=0; j<N; j++)
+    {
+      /* D_j = A_jj - sum_k=1^j-1 L_jk^2 D_k */
+      d[j] = A[j][j];
+      for(i=0; i<j; i++) d[j] -=  L[j][i] * L[j][i] * d[i];
+
+      /* check for a singularity */
+      if( d[j] == 0.0 )
+        {
+          fprintf(stderr,"error: singular matrix\n");
+          exit(EXIT_FAILURE);
+        }
+
+      /* for i>j, L_ij = (A_ij - sum_k=1^j-1 L_ik L_jk D_k) / D_j */
+      for(i=j+1; i<N; i++)
+        {
+          v = A[i][j];
+          for(k=0; k<j; k++) v -=  L[i][k] * L[j][k] * d[k];
+          L[j][i] = L[i][j] = v / d[j];
+        }
+    }
+
+  /* solve Ly=b by forward substitution */
+  for(i=0; i<N; i++)
+    {
+      y[i] = b[i];
+      for(j=0; j<=i; j++) y[i] -= L[i][j] * y[j];
+    }
+
+  /* solve Lx=y by back substitution */
+  for(i=N-1; i>=0; i--)
+    {
+      x[i] = y[i]/d[i];
+      for(j=i; j<N; j++) x[i] -= L[i][j] * x[j];
+    }
+
+  /* free memory */
+  free(*L);
+  free(L);
+  free(y);
+  free(d);
+}
+
+static void solve_cholesky_float(double ** A, float * x, double * b, int N)
 {
   double ** L = zeros_dmat(N,N);
   double *  d = zeros_dvect(N);
@@ -328,6 +439,70 @@ static void interpolation( double * y, int p, double * a, int * t, int m,
 
   /* solve Bx=-d (the minus sign was already included in d) */
   solve_cholesky(B,x,d,m);
+
+  /* free memory */
+  free(*B);
+  free(B);
+  free(b);
+  free(d);
+}
+
+static void interpolation_float( float * y, int p, double * a, int * t, int m,
+                           float * x )
+{
+  double * b = zeros_dvect(p+1);
+  double ** B = zeros_dmat(m,m);
+  double * d = zeros_dvect(m);
+  int i,j;
+
+  /*
+   Interpolation by the algorithm described in:
+
+   A. Janssen, R. Veldhuis, L. Vries, "Adaptive interpolation of discrete-time
+   signals that can be modeled as autoregressive processes", IEEE Transactions
+   on Acoustics, Speech and Signal Processing, 34(2):317-330, 1986.
+
+   The missing samples x are set as the ones that minimize
+
+     Q(x) = sum_k=p+1^N |x[k] + sum_l=1^p a[l]*x[k-l]|^2
+
+   which corresponds to the sum of the absolute AR predicting error.
+   The error Q(x) can also be expressed as
+
+     Q(x) = x'Bx + 2x'd + C
+
+   where x' is the transposed of x, C is a term that depends only on
+   known samples and is thus constant, and the matrix B and vector d
+   are defined as below.
+
+   The interpolated samples are obtained by solving Bx=-d.
+   */
+
+  /* compute auxiliary vector b */
+  for(i=0; i<=p; i++)
+    {
+      b[i] = 0.0;
+      for(j=i; j<=p; j++)
+        b[i] += a[j] * a[j-i];
+    }
+
+  /* compute matrix B */
+  for(i=0; i<m; i++)
+    for(j=i; j<m; j++)
+      if( abs(t[i] - t[j]) <= p )
+        B[j][i] = B[i][j] = b[ abs(t[i] - t[j]) ];
+
+  /* compute vector d (actually -d) */
+  for(i=0; i<m; i++)
+    {
+      d[i] = 0;
+      for(j=-p; j<=p; j++)
+        if( ispresent(t[i]-j,t,m) == 0 )
+          d[i] -= b[abs(j)] * y[t[i] - j];
+    }
+
+  /* solve Bx=-d (the minus sign was already included in d) */
+  solve_cholesky_float(B,x,d,m);
 
   /* free memory */
   free(*B);
@@ -463,6 +638,126 @@ int * adrinas(double * signal, int N, int p, double K, int b, int Nw)
   free(burst_zeropad);
 
   return burst;
+}
+
+int * adrinas_float(float * signal, int N, int p, double K, int b, int Nw)
+{
+  int nHop = Nw / 4;
+  int nFrames = floor( (N+Nw) / nHop ) + 1;
+  float * input_zeropad  = zeros_fvect( Nw + (nFrames-1) * nHop );
+  float * output_zeropad = zeros_fvect( Nw + (nFrames-1) * nHop );
+  int    * burst_zeropad  = zeros_ivect( Nw + (nFrames-1) * nHop );
+  float * w = zeros_fvect(Nw);
+  // int * burst = zeros_ivect(N);
+  int i;
+
+  /* Zero-padded versions of the audio signal and of the burst*/
+  #pragma omp parallel for private(i) shared(input_zeropad)
+  for(i=0; i<N; i++)
+    input_zeropad[ i + Nw ] = signal[i];
+
+  /* Hamming window of size Nw */
+  #pragma omp parallel for private(i) shared(w)
+  for(i=0; i<Nw; i++)
+    w[i] = ( 0.54 - 0.46*cos( 2*PI*i/Nw ) ) / (4*0.54);
+
+  /* process frame by frame */
+  #pragma omp parallel for private(i) shared(input_zeropad,w,output_zeropad,burst_zeropad)
+  for(i=0; i<nFrames; i++)
+    {
+      float * frame = zeros_fvect(Nw);
+      float * x = zeros_fvect(Nw);
+      float * d = zeros_fvect(Nw);
+      int * t    = zeros_ivect(Nw);
+      int * i_t  = zeros_ivect(Nw);
+      double * a = zeros_dvect(p+1);
+      double sigmae;
+      int j,k,m,prev;
+
+      /* extract frame from input */
+      for(j=0; j<Nw; j++)
+        frame[j] = input_zeropad[ i*nHop + j ];
+
+      /* compute AR parameters and sigma_e */
+      sigmae = ar_parameters_float(frame,p,Nw,a);
+
+      if( isdefined(a,p+1) )
+        {
+          /* compute detection signal */
+          for(j=p; j<Nw; j++)
+            for(k=0; k<=p; k++)
+              d[j] += a[k] * frame[j-k];
+
+          /* first step of burst detection */
+          for(j=0; j<Nw; j++)
+            {
+              if( fabs(d[j]) > K*sigmae ) i_t[j] = 1;
+              else                        i_t[j] = 0;
+            }
+
+          /* second burst detection step: merge burst separate by small gap */
+          prev = -1;
+          for(j=0; j<Nw; j++)
+            if( i_t[j] == 1 )
+              {
+                if( prev>=0 && (j-prev)>1 && (j-prev)<=b )
+                  for(k=prev+1; k<j; k++) i_t[k] = 1;
+                prev = j;
+              }
+          for(j=0; j<p; j++) i_t[j] = 0;
+          for(j=Nw-p; j<Nw; j++) i_t[j] = 0;
+
+          /* fill burst index table and count detected bursts */
+          for(m=0, j=p; j<Nw-p; j++)
+            if( i_t[j] == 1 ) t[ m++ ] = j;
+
+          /* if there are missing samples, interpolate them */
+          if( m > 0 )
+            {
+              /* interpolation of missing samples */
+              interpolation_float(frame,p,a,t,m,x);
+
+              /* copy interpolated values to the frame */
+              for(j=0; j<m; j++) frame[ t[j] ] = x[j];
+              // for(j=0; j<m; j++) frame[ t[j] ] = 0.;
+            }
+        }
+
+     /* copy burst detection positions in frame to full burst output */
+     if( sum_ivect(i_t,Nw) > 0 )
+        for(j=0; j<Nw; j++)
+          if( i_t[j] == 1 )
+            burst_zeropad[i*nHop+j] = 1;
+
+      /* add the processed frame to output using a Hamming window */
+      for(j=0; j<Nw; j++)
+        output_zeropad[ i*nHop + j ] += frame[j]*w[j];
+
+      /* free memory */
+      free(x);
+      free(t);
+      free(d);
+      free(frame);
+      free(a);
+      free(i_t);
+    }
+
+  /* get the final output from zero-padded versions */
+  #pragma omp parallel for private(i) shared(signal,output_zeropad)
+  for(i=0; i<N; i++)
+    signal[i] = output_zeropad[i+Nw];
+/*
+#pragma omp parallel for private(i) shared(burst,burst_zeropad)
+  for(i=0; i<N; i++)
+    burst[i] = burst_zeropad[i+Nw];
+*/
+  /* free memory */
+  free(w);
+  free(input_zeropad);
+  free(output_zeropad);
+  free(burst_zeropad);
+
+  return NULL;
 }
 
 /*----------------------------------------------------------------------------*/

@@ -41,6 +41,7 @@
    return value : pointer to a int signal of size N, containing burst detections
  */
 int * adrinas(double * signal, int N, int p, double K, int b, int Nw);
+int * adrinas_float(float * signal, int N, int p, double K, int b, int Nw);
 
 #endif /* !ADRINAS_HEADER */
 /*----------------------------------------------------------------------------*/

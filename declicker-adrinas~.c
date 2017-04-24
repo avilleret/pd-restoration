@@ -45,15 +45,17 @@ t_int *declicker_adrinas_tilde_perform(t_int *w)
   }
 
   int i;
+/*
 #pragma omp parallel for private(i) shared(in,out)
   for (i=0;i<blocksize;i++)
-      x->buffer[i] = (double) in[i];
+      x->buffer[i] = in[i];
+*/
 
-  int* burst = adrinas(x->buffer, blocksize, x->p, x->K, x->b, x->Nw);
+  int* burst = adrinas_float(in, blocksize, x->p, x->K, x->b, x->Nw);
   if (burst) free(burst);
 #pragma omp parallel for private(i) shared(in,out)
   for (i=0;i<blocksize;i++)
-      out[i] = (float) x->buffer[i];
+      out[i] = in[i];
 
   /* return a pointer to the dataspace for the next dsp-object */
   return (w+5);
@@ -88,6 +90,7 @@ void declicker_adrinas_tilde_window_width(t_declicker_adrinas_tilde* x, t_float 
 
 void declicker_adrinas_tilde_free(t_declicker_adrinas_tilde *x)
 {
+  if (x->buffer) free(x->buffer);
   outlet_free(x->x_out);
 }
 
