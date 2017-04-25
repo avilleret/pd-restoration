@@ -22,8 +22,7 @@ typedef struct _declicker_adrinas_tilde {
   int b;       /* Second threshold */
   int p;       /* Order of the model */
   int Nw;      /* Window length */
-  double* buffer;
-  int bufsize;
+  t_adrinas_buffer* adrinas_buf;
 
 } t_declicker_adrinas_tilde;
 
@@ -38,24 +37,16 @@ t_int *declicker_adrinas_tilde_perform(t_int *w)
   /* all signalblocks are of the same length */
   int        blocksize =           (int)(w[4]);
 
-  if (x->bufsize != blocksize){
-      if (x->buffer) free(x->buffer);
-      x->buffer = malloc(blocksize * sizeof(double));
-      x->bufsize = blocksize;
+  if (    x->adrinas_buf == NULL ||
+          x->adrinas_buf->buffer_size != blocksize ||
+          x->adrinas_buf->window_size != x->Nw ||
+          x->adrinas_buf->order != x->p){
+      if (x->adrinas_buf) adrinas_deinit(x->adrinas_buf);
+      x->adrinas_buf = adrinas_init_buffer(blocksize, x->Nw, x->p);
+      logpost(x, 3, "reallocate buffer, buffer_size: %d, window_size: %d, order: %d", x->adrinas_buf->buffer_size, x->adrinas_buf->window_size, x->p);
   }
 
-  int i;
-/*
-#pragma omp parallel for private(i) shared(in,out)
-  for (i=0;i<blocksize;i++)
-      x->buffer[i] = in[i];
-*/
-
-  int* burst = adrinas_float(in, blocksize, x->p, x->K, x->b, x->Nw);
-  if (burst) free(burst);
-#pragma omp parallel for private(i) shared(in,out)
-  for (i=0;i<blocksize;i++)
-      out[i] = in[i];
+  adrinas_float_noalloc(x->adrinas_buf, in, out, x->p, x->K, x->b);
 
   /* return a pointer to the dataspace for the next dsp-object */
   return (w+5);
@@ -90,7 +81,7 @@ void declicker_adrinas_tilde_window_width(t_declicker_adrinas_tilde* x, t_float 
 
 void declicker_adrinas_tilde_free(t_declicker_adrinas_tilde *x)
 {
-  if (x->buffer) free(x->buffer);
+  adrinas_deinit(x->adrinas_buf);
   outlet_free(x->x_out);
 }
 
@@ -105,8 +96,7 @@ void *declicker_adrinas_tilde_new()
   x->b = 20;        /* Second threshold */
   x->p = 3*100+2;   /* Order of the model */
   x->Nw = 8*x->p;   /* Window length */
-  x->buffer = NULL;
-  x->bufsize = 0;
+  x->adrinas_buf = adrinas_init_buffer(64,8,x->p);
 
   return (void *)x;
 }
