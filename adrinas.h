@@ -74,7 +74,7 @@ typedef struct _adrinas_buffer {
 
     float*  frame;
     float*  x;
-    double* d;
+    float* d;
     int*    t;
     int*    i_t;
     float* a;

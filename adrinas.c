@@ -385,12 +385,12 @@ static void solve_cholesky(double ** A, double * x, double * b, int N)
     free(d);
 }
 
-static void solve_cholesky_float(double ** A, float * x, double * b, int N)
+static void solve_cholesky_float(float ** A, float * x, float * b, int N)
 {
-    double ** L = zeros_dmat(N,N);
-    double *  d = zeros_dvect(N);
-    double *  y = zeros_dvect(N);
-    double v;
+    float ** L = zeros_fmat(N,N);
+    float *  d = zeros_fvect(N);
+    float *  y = zeros_fvect(N);
+    float v;
     int i,j,k;
 
     /* A = LDL' decomposition
@@ -477,6 +477,7 @@ static void solve_cholesky_float_noalloc(t_solve_buffer* buf, float ** A, float 
         for(i=j+1; i<N; i++)
         {
             v = A[i][j];
+// #pragma omp parallel for private(k) shared(L)
             for(k=0; k<j; k++) v -=  L[i][k] * L[j][k] * d[k];
             L[j][i] = L[i][j] = v / d[j];
         }
@@ -572,12 +573,12 @@ static void interpolation( double * y, int p, double * a, int * t, int m,
     free(d);
 }
 
-static void interpolation_float( float * y, int p, double * a, int * t, int m,
+static void interpolation_float( float * y, int p, float * a, int * t, int m,
                                  float * x )
 {
-    double * b = zeros_dvect(p+1);
-    double ** B = zeros_dmat(m,m);
-    double * d = zeros_dvect(m);
+    float * b = zeros_fvect(p+1);
+    float ** B = zeros_fmat(m,m);
+    float * d = zeros_fvect(m);
     int i,j;
 
     /*
@@ -871,7 +872,7 @@ t_adrinas_buffer* adrinas_init_buffer(int buffer_size, int window_size, int orde
 
         x->frame = zeros_fvect(window_size);
         x->x = zeros_fvect(window_size);
-        x->d = zeros_dvect(window_size);
+        x->d = zeros_fvect(window_size);
         x->t    = zeros_ivect(window_size);
         x->i_t  = zeros_ivect(window_size);
         x->a = zeros_fvect(order+1);
@@ -1054,7 +1055,6 @@ void adrinas_float_noalloc(t_adrinas_buffer* buf, float * input, float* output, 
     int nFrames = floor( (N+Nw) / nHop ) + 1;
     float * input_zeropad  = buf->input_zeropad;
     float * output_zeropad = buf->output_zeropad;
-    int    * burst_zeropad  = buf->burst_zeropad;
     float * w = buf->window;
     // int * burst = zeros_ivect(N);
     int i;
@@ -1071,7 +1071,7 @@ void adrinas_float_noalloc(t_adrinas_buffer* buf, float * input, float* output, 
         input_zeropad[ i + Nw ] = input[i];
 
     /* process frame by frame */
-#pragma omp parallel for private(i) shared(input_zeropad,w,output_zeropad,burst_zeropad)
+#pragma omp parallel for private(i) shared(input_zeropad,w,output_zeropad)
     for(i=0; i<nFrames; i++)
     {
         float * frame = buf->frame;
@@ -1140,12 +1140,13 @@ void adrinas_float_noalloc(t_adrinas_buffer* buf, float * input, float* output, 
                 /* copy interpolated values to the frame */
                 for(j=0; j<m; j++) frame[ t[j] ] = x[j];
                 // for(j=0; j<m; j++) frame[ t[j] ] = 0.;
+
                 /*
-              for(j=0; j<m; j++){
-                  float alpha = (float) j / (float) m;
-                  frame[ t[j] ] = frame[ t[0] ] * (1-alpha) + frame[ t[m] ] * alpha;
-              }
-              */
+                for(j=0; j<m; j++){
+                    float alpha = (float) j / (float) m;
+                    frame[ t[j] ] = frame[ t[0] ] * (1-alpha) + frame[ t[m] ] * alpha;
+                }
+                */
             }
         }
 
@@ -1156,7 +1157,7 @@ void adrinas_float_noalloc(t_adrinas_buffer* buf, float * input, float* output, 
 
     /* get the final output from zero-padded versions */
 
-#pragma omp parallel for private(i) shared(signal,output_zeropad)
+#pragma omp parallel for private(i) shared(output,output_zeropad)
     for(i=0; i<N; i++)
         output[i] = output_zeropad[i+Nw];
 }

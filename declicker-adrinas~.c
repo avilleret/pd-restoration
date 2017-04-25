@@ -76,7 +76,7 @@ void declicker_adrinas_tilde_model_order(t_declicker_adrinas_tilde* x, t_float f
 }
 
 void declicker_adrinas_tilde_window_width(t_declicker_adrinas_tilde* x, t_float f){
-  x->Nw = f;
+  x->Nw = f>16.?f:16.;
 }
 
 void declicker_adrinas_tilde_free(t_declicker_adrinas_tilde *x)
