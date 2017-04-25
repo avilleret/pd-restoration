@@ -44,7 +44,7 @@
 static void error(char * msg)
 {
     fprintf(stderr,"error: %s\n",msg);
-    exit(EXIT_FAILURE);
+    // exit(EXIT_FAILURE);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -903,24 +903,67 @@ t_adrinas_buffer* adrinas_init_buffer(int buffer_size, int window_size, int orde
 
 void adrinas_deinit(t_adrinas_buffer* x){
     /* free memory */
-    if(x->window) free(x->window);
-    if(x->input_zeropad) free(x->input_zeropad);
-    if(x->output_zeropad) free(x->output_zeropad);
-    if(x->burst_zeropad) free(x->burst_zeropad);
-    if(x->burst) free(x->burst);
+    if(x->window){
+        free(x->window);
+        x->window = NULL;
+    }
+    if(x->input_zeropad){
+        free(x->input_zeropad);
+        x->input_zeropad = NULL;
+    }
+    if(x->output_zeropad){
+        free(x->output_zeropad);
+        x->output_zeropad = NULL;
+    }
+    if(x->burst_zeropad){
+        free(x->burst_zeropad);
+        x->burst_zeropad = NULL;
+    }
+    if(x->burst){
+        free(x->burst);
+        x->burst = NULL;
+    }
 
-    if(x->x)             free(x->x);
-    if(x->t)             free(x->t);
-    if(x->d)             free(x->d);
-    if(x->frame)         free(x->frame);
-    if(x->a)             free(x->a);
-    if(x->i_t)           free(x->i_t);
+    if(x->x){
+        free(x->x);
+        x->x = NULL;
+    }
+    if(x->t){
+        free(x->t);
+        x->t = NULL;
+    }
+    if(x->d){
+        free(x->d);
+        x->d = NULL;
+    }
+    if(x->frame){
+        free(x->frame);
+        x->frame = NULL;
+    }
+    if(x->a){
+        free(x->a);
+        x->a = NULL;
+    }
+    if(x->i_t){
+        free(x->i_t);
+        x->i_t = NULL;
+    }
 
     if (x->interp_buf){
-        if(x->interp_buf->b) free (x->interp_buf->b);
-        if(x->interp_buf->B) free (x->interp_buf->B);
-        if(x->interp_buf->d) free (x->interp_buf->d);
+        if(x->interp_buf->b){
+            free (x->interp_buf->b);
+            x->interp_buf->b = NULL;
+        }
+        if(x->interp_buf->B){
+            free (x->interp_buf->B);
+            x->interp_buf->B = NULL;
+        }
+        if(x->interp_buf->d){
+            free (x->interp_buf->d);
+            x->interp_buf->d;
+        }
         free(x->interp_buf);
+        x->interp_buf = NULL;
     }
 
     free(x);
