@@ -960,7 +960,7 @@ void adrinas_deinit(t_adrinas_buffer* x){
         }
         if(x->interp_buf->d){
             free (x->interp_buf->d);
-            x->interp_buf->d;
+            x->interp_buf->d = NULL;
         }
         free(x->interp_buf);
         x->interp_buf = NULL;
