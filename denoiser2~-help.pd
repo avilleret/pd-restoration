@@ -1,4 +1,4 @@
-#N canvas 530 106 954 893 10;
+#N canvas 527 119 954 893 10;
 #X text 516 17 This is a port of Luciano Dato's Noise Repellent LV2
 plugin.;
 #X text 517 36 The original code have been found here : https://github.com/lucianodato/noise-repellent
@@ -52,7 +52,7 @@ plugin.;
 #X obj 298 378 line~;
 #X obj 297 407 dbtorms~;
 #X obj 165 466 *~;
-#X obj 240 99 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 1
+#X obj 240 99 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
 1;
 #X floatatom 389 362 5 0 0 0 - - -, f 5;
 #X obj 240 127 metro 250;
@@ -104,10 +104,10 @@ plugin.;
 #X connect 30 0 9 0;
 #X connect 31 0 30 0;
 #X restore 24 644 pd noisysound;
-#X obj 112 620 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 1
+#X obj 112 620 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
 1;
 #X msg 87 293 \; pd dsp \$1;
-#X obj 87 265 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 1
+#X obj 87 265 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
 1;
 #X text 240 96 Capture noise;
 #X text 250 147 Automatically capture noise;
@@ -115,7 +115,7 @@ plugin.;
 from input signal);
 #X text 206 53 reset noise footprint;
 #X text 97 594 add some synth notes;
-#X obj 24 618 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 1
+#X obj 24 618 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
 1;
 #X text 12 597 noise;
 #X msg 306 528 reduction_strenght \$1;
@@ -140,21 +140,23 @@ on noise capture for one second or two to learn the noise profile and
 then turn it off. Then you can now adjust the reduction.;
 #X text 290 249 Attenuation level in dB \, 0 means no attenuation.
 (0 - 48 \, default 0.);
-#X msg 316 553 get noise-profil-p2 noise-profil-mag;
-#X obj 499 833 table noise-profil-p2 1025;
-#X obj 499 853 table noise-profil-mag 1025;
 #X obj 499 813 soundfiler;
-#X msg 499 710 read noise-profil-p2.wav noise-profil-p2 \, read noise-profil-mag.wav
-noise-profil-mag;
-#X msg 509 746 write -wave noise-profil-p2.wav noise-profil-p2 \, write
--wave noise-profil-mag.wav noise-profil-mag;
-#X obj 467 664 t b b;
+#X obj 467 674 t b b;
 #X obj 467 641 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144
 -1 -1;
-#X msg 316 583 set noise-profil-p2 noise-profil-mag;
 #X obj 467 617 r pd-dsp-started;
-#X text 583 550 save profil to arrays;
-#X text 583 580 load profil from arrays;
+#X msg 316 553 get noise-profile-p2 noise-profile-mag;
+#X msg 316 582 set noise-profile-p2 noise-profile-mag;
+#X text 591 558 save profile to arrays;
+#X text 591 585 load profile from arrays;
+#X text 488 640 noise profile should be set *after* DSP start (because
+internal buffer is allocated on DSP start);
+#X msg 499 710 read noise-profile-p2.wav noise-profile-p2 \, read noise-profile-mag.wav
+noise-profile-mag;
+#X msg 509 746 write -wave noise-profile-p2.wav noise-profile-p2 \,
+write -wave noise-profile-mag.wav noise-profile-mag;
+#X obj 499 833 table noise-profile-p2 1025;
+#X obj 499 853 table noise-profile-mag 1025;
 #X connect 3 0 16 0;
 #X connect 4 0 3 0;
 #X connect 5 0 6 0;
@@ -184,11 +186,11 @@ noise-profil-mag;
 #X connect 39 0 12 0;
 #X connect 40 0 11 0;
 #X connect 43 0 9 0;
-#X connect 46 0 16 0;
-#X connect 50 0 49 0;
-#X connect 51 0 49 0;
-#X connect 52 0 54 0;
-#X connect 52 1 50 0;
-#X connect 53 0 52 0;
-#X connect 54 0 16 0;
-#X connect 55 0 53 0;
+#X connect 47 0 51 0;
+#X connect 47 1 55 0;
+#X connect 48 0 47 0;
+#X connect 49 0 48 0;
+#X connect 50 0 16 0;
+#X connect 51 0 16 0;
+#X connect 55 0 46 0;
+#X connect 56 0 46 0;
