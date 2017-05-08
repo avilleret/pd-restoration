@@ -729,8 +729,8 @@ void denoiser2_tilde_param_mess(t_denoiser2_tilde* x, t_symbol* s, int ac, t_ato
                 for (int i=0;i<arraysize;i++){
                      vec[i].w_float = x->noise_thresholds_p2[i];
                 }
+                garray_redraw(a);
             }
-            garray_redraw(a);
 
             // get magnitude array
             arrayname = atom_getsymbol(av+1);
@@ -747,8 +747,8 @@ void denoiser2_tilde_param_mess(t_denoiser2_tilde* x, t_symbol* s, int ac, t_ato
                 for (int i=0;i<arraysize;i++){
                     vec[i].w_float = x->noise_thresholds_magnitude[i];
                 }
+                garray_redraw(a);
             }
-            garray_redraw(a);
         } else {
             pd_error(x,"'get' message need 2 array name as argument");
         }
