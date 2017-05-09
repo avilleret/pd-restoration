@@ -67,9 +67,9 @@ void declicker_tilde_remove_click(t_declicker_tilde* x, int len, t_sample* buffe
     for( i=0; i<len-sep; i++ ){
       msw = 0;
       for( j=0; j<ww; j++) {
-        msw += x->x_b2[i+s2+j];
+        msw += x->x_b2[i+s2+j]; // accumulate
       }
-      msw /= ww;
+      msw /= ww; // normalize
 
       if(msw >= x->x_threshold * x->x_ms_seq[i]/10) {
         if( left == 0 ) {
@@ -80,7 +80,7 @@ void declicker_tilde_remove_click(t_declicker_tilde* x, int len, t_sample* buffe
           float lv = buffer[left];
           float rv = buffer[i+ww+s2];
           for(j=left; j<i+ww+s2; j++) {
-            buffer[j]= (rv*(j-left) + lv*(i+ww+s2-j))/(float)(i+ww+s2-left);
+            buffer[j]= (rv*(j-left) + lv*(i+ww+s2-j))/(float)(i+ww+s2-left); // interpolation between lv and rv (left and right value around click)
             x->x_b2[j] = buffer[j]*buffer[j];
           }
           left=0;
