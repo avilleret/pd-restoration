@@ -109,7 +109,7 @@ static void estimate_noise_loizou(float* thresh,
 
 
 //Automatic noise threshold estimation
-void auto_capture_noise(float* p2,
+extern void auto_capture_noise(float* p2,
                         int fft_size_2,
                         float* noise_thresholds_p2,
                         float* noise_thresholds_magnitude,
