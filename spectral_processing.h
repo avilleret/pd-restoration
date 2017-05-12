@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "nrepel.h"
 
 void spectral_gain_computing(float* fft_p2,
                              float* fft_p2_prev,
@@ -25,3 +26,5 @@ void gain_application(float amount_of_reduction,
                       float residual_whitening,
                       float noise_listen,
                       bool debug);
+
+void gain_application_simple(t_denoiser2_tilde* nrepel);

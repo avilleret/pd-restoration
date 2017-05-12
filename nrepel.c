@@ -20,11 +20,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/
 
 #include <stdlib.h>
 #include <string.h>
-#include <fftw3.h>
 #include <time.h>
 #include <stdio.h>
 
-#include "m_pd.h"
+#include "nrepel.h"
 #include "extra_functions.h"
 #include "spectral_processing.h"
 #include "estimate_noise_spectrum.h"
@@ -37,106 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/
 
 static t_class *denoiser2_tilde_class;
 
-typedef enum {
-    NREPEL_CAPTURE = 0,
-    NREPEL_N_AUTO = 1,
-    NREPEL_AMOUNT = 2,
-    NREPEL_SCALE = 3,
-    NREPEL_STRENGTH = 4,
-    NREPEL_SMOOTHING = 5,
-    NREPEL_FREQUENCY_SMOOTHING = 6,
-    NREPEL_LATENCY = 7,
-    NREPEL_WHITENING = 8,
-    NREPEL_MAKEUP = 9,
-    NREPEL_RESET = 10,
-    NREPEL_NOISE_LISTEN = 11,
-    NREPEL_ENABLE = 12,
-    NREPEL_INPUT = 13,
-    NREPEL_OUTPUT = 14,
-} PortIndex;
-
-typedef struct _denoiser2_tilde {
-    t_object x_obj;
-    t_outlet* outlet;
-    t_sample f;
-    bool debug;
-
-    float samp_rate;                  //Sample rate received from the host
-
-    //Parameters for the algorithm (user input)
-    bool  capture_state;            //Capture Noise state (Manual-Off-Auto)
-    float amount_of_reduction;      //Amount of noise to reduce in dB
-    float snr_influence;       	  	//Scale of reduction for nonlinear_power_sustraction
-    float reduction_strenght;        //Second Oversustraction factor
-    // float* report_latency;            //Latency necessary
-    bool   reset_print;               //Reset Noise switch
-    float noise_listen;              //For noise only listening
-    float residual_whitening;        //Whitening of the residual spectrum
-    float time_smoothing;            //constant that set the time smoothing coefficient
-    bool  auto_state;                //autocapture switch
-    float frequency_smoothing;       //Smoothing over frequency
-    // float* masking;                   //Activate masking threshold
-    float  enable;                    //For soft bypass (click free bypass)
-    float makeup_gain;
-
-    //Control variables
-    bool noise_thresholds_availables; //indicate whether a noise print is available or no
-
-
-    //Parameters values and arrays for the STFT
-    int fft_size;                     //FFTW input size
-    int fft_size_2;                   //FFTW half input size
-    int window_combination;           //Window combination for the STFT
-    float overlap_factor;             //oversampling factor for overlap calculations
-    float overlap_scale_factor;       //Scaling factor for conserving the final amplitude
-    int hop;                          //Hop size for the STFT
-    float* window_input;              //Input Window values
-    float* window_output;             //Input Window values
-    float window_count;              //Count windows for mean computing
-    float tau;                        //time constant for soft bypass
-    float wet_dry_target;             //softbypass target for softbypass
-    float wet_dry;                    //softbypass coeff
-    float reduction_coeff;            //Gain to apply to the residual noise
-
-    //Buffers for processing and outputting
-    int input_latency;
-    float* in_fifo;                   //internal input buffer
-    float* out_fifo;                  //internal output buffer
-    float* output_accum;              //FFT output accumulator
-    int read_ptr;                     //buffers read pointer
-
-    //FFTW related arrays
-    float* input_fft_buffer;
-    float* output_fft_buffer;
-    fftwf_plan forward;
-    fftwf_plan backward;
-
-    //Arrays and variables for getting bins info
-    float real_p,imag_n,mag,p2;
-    float* fft_magnitude;             //magnitude spctrum
-    float* fft_magnitude_prev;        //magnitude spectrum of the previous frame
-    float* fft_p2;                    //power spectrum
-    float* fft_p2_prev;               //power spectum of previous frame
-    float* noise_thresholds_p2;       //captured noise print power spectrum
-    float* noise_thresholds_magnitude;//captured noise print magnitude spectrum
-
-    float* Gk;                        //gain to be applied
-
-    //Loizou algorithm
-    float* auto_thresholds;           //Reference threshold for louizou algorithm
-    float* prev_noise_thresholds;
-    float* s_pow_spec;
-    float* prev_s_pow_spec;
-    float* p_min;
-    float* prev_p_min;
-    float* speech_p_p;
-    float* prev_speech_p_p;
-
-    // clock_t start, end;
-    // double cpu_time_used;
-} t_denoiser2_tilde;
-
-void denoiser2_tilde_free(t_denoiser2_tilde* x){
+static void denoiser2_tilde_free_buffer(t_denoiser2_tilde* x){
     free(x->in_fifo);
     free(x->out_fifo);
     free(x->output_accum);
@@ -159,41 +59,10 @@ void denoiser2_tilde_free(t_denoiser2_tilde* x){
     free(x->prev_p_min);
     free(x->speech_p_p);
     free(x->prev_speech_p_p);
-    outlet_free(x->outlet);
-}
 
-void denoiser2_tilde_allocate_buffer(t_denoiser2_tilde* x){
-    //Initialize variables
-    x->fft_size_2 = x->fft_size/2;
-    x->hop = x->fft_size/x->overlap_factor;
-    x->input_latency = x->fft_size - x->hop;
-    x->read_ptr = x->input_latency; //the initial position because we are that many samples ahead
-    x->tau = (1.f - exp (-2.f * M_PI * 25.f * 64.f  / x->samp_rate));
-    x->window_count = 0.f;
-    x->noise_thresholds_availables = false;
-
-    free(x->in_fifo);
-    free(x->out_fifo);
-    free(x->output_accum);
-    free(x->window_input);
-    free(x->window_output);
-    free(x->input_fft_buffer);
-    free(x->output_fft_buffer);
-    free(x->fft_magnitude);
-    free(x->fft_magnitude_prev);
-    free(x->fft_p2);
-    free(x->fft_p2_prev);
-    free(x->noise_thresholds_p2);
-    free(x->noise_thresholds_magnitude);
-    free(x->Gk);
-    free(x->auto_thresholds);
-    free(x->prev_noise_thresholds);
-    free(x->s_pow_spec);
-    free(x->prev_s_pow_spec);
-    free(x->p_min);
-    free(x->prev_p_min);
-    free(x->speech_p_p);
-    free(x->prev_speech_p_p);
+    free(x->denoised_fft_buffer);
+    free(x->residual_spectrum);
+    free(x->tappering_filter);
 
     x->in_fifo = NULL;
     x->out_fifo = NULL;
@@ -222,6 +91,26 @@ void denoiser2_tilde_allocate_buffer(t_denoiser2_tilde* x){
     x->prev_p_min = NULL;
     x->speech_p_p = NULL;
     x->prev_speech_p_p = NULL;
+
+    x->denoised_fft_buffer = NULL;
+    x->residual_spectrum = NULL;
+    x->tappering_filter = NULL;
+}
+void denoiser2_tilde_free(t_denoiser2_tilde* x){
+    denoiser2_tilde_free_buffer(x);
+
+    outlet_free(x->outlet);
+}
+
+void denoiser2_tilde_allocate_buffer(t_denoiser2_tilde* x){
+    //Initialize variables
+    x->fft_size_2 = x->fft_size/2;
+    x->hop = x->fft_size/x->overlap_factor;
+    x->input_latency = x->fft_size - x->hop;
+    x->read_ptr = x->input_latency; //the initial position because we are that many samples ahead
+    x->tau = (1.f - exp (-2.f * M_PI * 25.f * 64.f  / x->samp_rate));
+    x->window_count = 0.f;
+    x->noise_thresholds_availables = false;
 
     x->in_fifo = (float*)calloc(x->fft_size,sizeof(float));
     x->out_fifo = (float*)calloc(x->fft_size,sizeof(float));
@@ -253,6 +142,9 @@ void denoiser2_tilde_allocate_buffer(t_denoiser2_tilde* x){
     x->speech_p_p = (float*)calloc((x->fft_size_2+1),sizeof(float));
     x->prev_speech_p_p = (float*)calloc((x->fft_size_2+1),sizeof(float));
 
+    x->denoised_fft_buffer = (float*)calloc((x->fft_size),sizeof(float));
+    x->residual_spectrum = (float*)calloc((x->fft_size),sizeof(float));
+    x->tappering_filter = (float*)calloc((x->fft_size_2+1),sizeof(float));
     //Window combination initialization (pre processing window post processing window)
     fft_pre_and_post_window(x->window_input,
                                                     x->window_output,
@@ -494,16 +386,7 @@ t_int *denoiser2_tilde_perform(t_int *w){
                                                 nrepel->frequency_smoothing);
 
                         //Gain Application
-                        gain_application(nrepel->amount_of_reduction,
-                                         nrepel->fft_size_2,
-                                         nrepel->fft_size,
-                                         nrepel->output_fft_buffer,
-                                         nrepel->Gk,
-                                         nrepel->makeup_gain,
-                                         nrepel->wet_dry,
-                                         nrepel->residual_whitening,
-                                         nrepel->noise_listen,
-                                         nrepel->debug);
+                        gain_application_simple(nrepel);
 
                     }
                 }

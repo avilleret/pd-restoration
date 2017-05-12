@@ -75,22 +75,24 @@ void spectral_gain_computing(float* fft_p2,
 }
 
 //GAIN APPLICATION
-void gain_application(float amount_of_reduction,
-                      int fft_size_2,
-                      int fft_size,
-                      float* output_fft_buffer,
-                      float* Gk,
-                      float makeup_gain,
-                      float wet_dry,
-                      float residual_whitening,
-                      float noise_listen,
-                      bool debug){
+void gain_application_simple(t_denoiser2_tilde* nrepel){
+
+  float amount_of_reduction = nrepel->amount_of_reduction;
+  int fft_size_2 =  nrepel->fft_size_2;
+  int fft_size = nrepel->fft_size;
+  float* output_fft_buffer = nrepel->output_fft_buffer;
+  float* Gk = nrepel->Gk;
+  float makeup_gain = nrepel->makeup_gain;
+  float wet_dry = nrepel->wet_dry;
+  float residual_whitening = nrepel->residual_whitening;
+  float noise_listen = nrepel->noise_listen;
+  bool debug = nrepel->debug;
 
   int k;
   float reduction_coeff = from_dB(-1.f*amount_of_reduction);
-  float denoised_fft_buffer[fft_size];
-  float residual_spectrum[fft_size];
-  float tappering_filter[fft_size_2+1];
+  float* denoised_fft_buffer = nrepel->denoised_fft_buffer;
+  float* residual_spectrum = nrepel->residual_spectrum;
+  float* tappering_filter = nrepel->tappering_filter;
 
   //Apply the computed gain to the signal and store it in denoised array
   for (k = 0; k <= fft_size_2; k++) {
@@ -117,7 +119,7 @@ void gain_application(float amount_of_reduction,
   //Residual signal Whitening and tappering
   if(residual_whitening > 0.f) {
     whitening_of_spectrum(residual_spectrum,residual_whitening,fft_size_2);
-    tappering_filter_calc(tappering_filter,(fft_size_2+1));
+    tappering_filter_calc(tappering_filter,fft_size_2+1);
     apply_tappering_filter(residual_spectrum,tappering_filter,fft_size_2);
   }
 
