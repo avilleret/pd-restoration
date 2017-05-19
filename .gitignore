@@ -1,0 +1,13 @@
+pd-restoration.config
+pd-restoration.creator
+pd-restoration.files
+pd-restoration.includes
+
+test/*
+
+*.o
+*.pd_linux
+*.pd_darwin 
+*.dll
+
+
