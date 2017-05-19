@@ -8,6 +8,8 @@
       #cflags = -fopenmp -O2 // TODO OpenMP optimization leads to "singular matrix" error
       #declicker-adrinas~.class.ldflags = -fopenmp -O2
 
+      cflags = -std=c99 -O3
+
       denoiser2~.class.sources =  denoiser2~/denoiser2~.c denoiser2~/estimate_noise_spectrum.c denoiser2~/extra_functions.c denoiser2~/spectral_processing.c denoiser2~/denoise_gain.c
       define forLinux
           denoiser2~.class.ldlibs += -lfftw3f
