@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
-#include "nrepel.h"
+#include "denoiser2~.h"
 
 void spectral_gain_computing(float* fft_p2,
                              float* fft_p2_prev,

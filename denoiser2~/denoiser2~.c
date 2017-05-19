@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/
 #include <time.h>
 #include <stdio.h>
 
-#include "nrepel.h"
+#include "denoiser2~.h"
 #include "extra_functions.h"
 #include "spectral_processing.h"
 #include "estimate_noise_spectrum.h"
